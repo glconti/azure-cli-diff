@@ -1,0 +1,203 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using AzureConfigurationDiff.Azure;
+using AzureConfigurationDiff.DiffSecrets;
+using Microsoft.Azure.Management.KeyVault.Fluent;
+using Spectre.Console;
+
+namespace AzureConfigurationDiff
+{
+    public class App
+    {
+        private readonly AzureService _azureService;
+
+        public App(AzureService azureService) => _azureService = azureService;
+
+        public async Task Run()
+        {
+            try
+            {
+                if (!ConsoleCanAcceptKeys()) return;
+
+                await Login();
+
+                var chooseKeyVaults = await ChooseKeyVaults();
+                if (chooseKeyVaults is null) return;
+
+                await CompareKeyVaults(chooseKeyVaults);
+            }
+            catch (Exception e)
+            {
+                AnsiConsole.WriteException(e);
+            }
+        }
+
+        private Task Login() =>
+            AnsiConsole.Status()
+                .AutoRefresh(true)
+                .Spinner(Spinner.Known.Default)
+                .StartAsync("[yellow]Connecting to Azure[/]", async ctx =>
+                {
+                    var subscriptionName = await _azureService.Login();
+
+                    AnsiConsole.MarkupLine($"[aqua]Connected to subscription {subscriptionName}.[/]");
+                });
+
+        private async Task<List<IVault>> ChooseKeyVaults()
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.Render(new Rule("[yellow]Key Vaults[/]").RuleStyle("grey").LeftAligned());
+
+            var keyVaults = await AnsiConsole.Status()
+                .AutoRefresh(true)
+                .Spinner(Spinner.Known.Default)
+                .StartAsync("[yellow]Retrieving Key Vaults[/]", async ctx =>
+                {
+                    var retrievedKeyVaults = (await _azureService.GetKeyVaults()).ToList();
+
+                    AnsiConsole.MarkupLine($"[aqua]Retrieved {retrievedKeyVaults.Count} Key Vaults.[/]");
+
+                    return retrievedKeyVaults;
+                });
+
+            var chosenKeyVaults = AnsiConsole.Prompt(
+                new MultiSelectionPrompt<IVault>()
+                    .PageSize(10)
+                    .Title("Which two [green]keyvaults[/] do you want to compare??")
+                    .MoreChoicesText("[grey](Move up and down to reveal more fruits)[/]")
+                    .InstructionsText(
+                        "[grey](Press [blue]<space>[/] to toggle a choice, [green]<enter>[/] to accept)[/]")
+                    .AddChoices(keyVaults)
+                    .UseConverter(vault => vault.Name));
+
+            if (chosenKeyVaults.Count == 2)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[green]You selected {chosenKeyVaults[0].Name} and {chosenKeyVaults[1].Name}.[/]");
+                return chosenKeyVaults;
+            }
+
+            AnsiConsole.MarkupLine("[red]You must select two Key Vaults.[/]");
+            return default;
+        }
+
+        private async Task CompareKeyVaults(IReadOnlyList<IVault> chooseKeyVaults)
+        {
+            AnsiConsole.WriteLine();
+
+            var leftKeyVault = chooseKeyVaults[0];
+            var rightKeyVault = chooseKeyVaults[1];
+
+            List<AzureSecret> leftSecrets = default;
+            List<AzureSecret> rightSecrets = default;
+
+            await AnsiConsole.Status()
+                .AutoRefresh(true)
+                .Spinner(Spinner.Known.Default)
+                .StartAsync("[yellow]Comparing secrets[/]", async ctx =>
+                {
+                    leftSecrets = await _azureService.ListKeyVaultSecrets(leftKeyVault);
+                    rightSecrets = await _azureService.ListKeyVaultSecrets(rightKeyVault);
+                });
+
+            var differences = AzureSecretDiffer.DoDiff(leftSecrets.ToList(), rightSecrets.ToList());
+            if (!differences.Any())
+            {
+                AnsiConsole.Render(new Rule("[green]The key vaults are identic[/]").RuleStyle("grey").LeftAligned());
+                return;
+            }
+
+            AnsiConsole.Render(BuildDiffTable(leftKeyVault, rightKeyVault, differences));
+        }
+
+        private static Table BuildDiffTable(IVault leftKeyVault, IVault rightKeyVault,
+            IReadOnlyList<DiffItem> differences)
+        {
+            var table = new Table()
+                .AddColumns($"[grey]{leftKeyVault.Name}[/]", $"[grey]{rightKeyVault.Name}[/]")
+                .Border(TableBorder.Rounded)
+                .BorderColor(Color.Grey);
+
+            foreach (var diffItem in differences)
+            {
+                switch (diffItem.Type)
+                {
+                    case DiffType.LeftOnly:
+                        table.AddRow($"[grey]{diffItem.LeftSecret.Name}[/]", "[red]Missing[/]");
+                        break;
+
+                    case DiffType.RightOnly:
+                        table.AddRow("[red]Missing[/]", $"[grey]{diffItem.RightSecret.Name}[/]");
+                        break;
+
+                    case DiffType.Modified:
+
+                        var leftDiff = BuildLeftPropertyDiff(diffItem);
+                        var rightDiff = BuildRightPropertyDiff(diffItem);
+
+                        table.AddRow(leftDiff, rightDiff);
+                        break;
+
+                    case DiffType.Unmodified:
+
+                        var leftValue =
+                            $"[green]{diffItem.LeftSecret.Name}{Environment.NewLine}{diffItem.LeftSecret.Value}[/]";
+                        var rightValue =
+                            $"[green]{diffItem.RightSecret.Name}{Environment.NewLine}{diffItem.RightSecret.Value}[/]";
+
+                        table.AddRow(leftValue, rightValue);
+                        break;
+
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+
+                table.AddEmptyRow();
+            }
+
+            return table;
+        }
+
+        private static string BuildRightPropertyDiff(DiffItem diffItem)
+        {
+            var rightDiff = new StringBuilder();
+            rightDiff.AppendLine($"[yellow]{diffItem.OrderBy}");
+
+            foreach (var diffItemDifference in diffItem.Differences)
+            {
+                rightDiff.AppendLine($"{diffItemDifference.PropertyName}:{diffItem.RightSecret.Value}");
+            }
+
+            rightDiff.AppendLine("[/]");
+
+            return rightDiff.ToString();
+        }
+
+        private static string BuildLeftPropertyDiff(DiffItem diffItem)
+        {
+            var leftDiff = new StringBuilder();
+            leftDiff.AppendLine($"[yellow]{diffItem.LeftSecret.Name}");
+
+            foreach (var diffItemDifference in diffItem.Differences)
+            {
+                leftDiff.AppendLine($"{diffItemDifference.PropertyName}:{diffItem.LeftSecret.Value}");
+            }
+
+            leftDiff.AppendLine("[/]");
+
+            return leftDiff.ToString();
+        }
+
+        private static bool ConsoleCanAcceptKeys()
+        {
+            // Check if we can accept key strokes
+            if (AnsiConsole.Profile.Capabilities.Interactive) return true;
+
+            AnsiConsole.MarkupLine("[red]Environment does not support interaction.[/]");
+            return false;
+        }
+    }
+}

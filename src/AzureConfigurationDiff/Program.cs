@@ -1,12 +1,10 @@
-﻿using System;
+﻿using System.Threading.Tasks;
+using AzureConfigurationDiff.Azure;
 
 namespace AzureConfigurationDiff
 {
-    class Program
+    public static class Program
     {
-        static void Main(string[] args)
-        {
-            Console.WriteLine("Hello World!");
-        }
+        public static async Task Main() => await new App(new AzureService()).Run();
     }
 }
