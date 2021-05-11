@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0</TargetFramework>
     <PackageId>Azure.Identity.Extensions</PackageId>
     <Description>A library that extends the base Azure.Identity functionality.</Description>
     <Version>0.0.5-preview</Version>
@@ -12,10 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Identity" Version="1.2.2" />
-    <PackageReference Include="Microsoft.Azure.Management.ResourceManager.Fluent" Version="1.30.0" />
-    <PackageReference Include="Microsoft.Azure.ServiceBus" Version="4.1.1" />
-    <PackageReference Include="Microsoft.Rest.ClientRuntime" Version="2.3.21" />
+    <PackageReference Include="Azure.Identity" Version="1.4.0-beta.5" />
+    <PackageReference Include="Microsoft.Azure.Management.ResourceManager.Fluent" Version="1.37.1" />
+    <PackageReference Include="Microsoft.Azure.ServiceBus" Version="5.1.3" />
+    <PackageReference Include="Microsoft.Rest.ClientRuntime" Version="2.3.23" />
   </ItemGroup>
 
 </Project>
