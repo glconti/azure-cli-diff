@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AzureConfigurationDiff.Azure;
 using AzureConfigurationDiff.DiffSecrets;
 using Microsoft.Azure.Management.KeyVault.Fluent;
+using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
 using Spectre.Console;
 
 namespace AzureConfigurationDiff
@@ -27,7 +28,9 @@ namespace AzureConfigurationDiff
                 var chooseKeyVaults = await ChooseKeyVaults();
                 if (chooseKeyVaults is null) return;
 
-                await CompareKeyVaults(chooseKeyVaults);
+                var chooseComparisonType = ChooseComparisonType();
+
+                await CompareKeyVaults(chooseKeyVaults, chooseComparisonType);
             }
             catch (Exception e)
             {
@@ -43,8 +46,23 @@ namespace AzureConfigurationDiff
                 {
                     var subscriptionName = await _azureService.Login();
 
-                    AnsiConsole.MarkupLine($"[aqua]Connected to subscription {subscriptionName}.[/]");
+                    AnsiConsole.MarkupLine($"Connected to subscription [green]{subscriptionName}.[/]");
                 });
+
+        private static ComparisonType ChooseComparisonType()
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.Render(new Rule("[yellow]Key Vault comparison type[/]").RuleStyle("grey").LeftAligned());
+
+            var comparisonType = AnsiConsole.Prompt(
+                new SelectionPrompt<ComparisonType>()
+                    .Title("Which type of comparison you want to run?")
+                    .AddChoices(Enum.GetValues<ComparisonType>()));
+
+            AnsiConsole.MarkupLine($"Comparison type: [green]{comparisonType}[/]");
+
+            return comparisonType;
+        }
 
         private async Task<List<IVault>> ChooseKeyVaults()
         {
@@ -58,7 +76,7 @@ namespace AzureConfigurationDiff
                 {
                     var retrievedKeyVaults = (await _azureService.GetKeyVaults()).ToList();
 
-                    AnsiConsole.MarkupLine($"[aqua]Retrieved {retrievedKeyVaults.Count} Key Vaults.[/]");
+                    AnsiConsole.MarkupLine($"Retrieved {retrievedKeyVaults.Count} Key Vaults.");
 
                     return retrievedKeyVaults;
                 });
@@ -66,7 +84,7 @@ namespace AzureConfigurationDiff
             var chosenKeyVaults = AnsiConsole.Prompt(
                 new MultiSelectionPrompt<IVault>()
                     .PageSize(10)
-                    .Title("Which two [green]keyvaults[/] do you want to compare??")
+                    .Title("Which [green]two[/] keyvaults do you want to compare??")
                     .MoreChoicesText("[grey](Move up and down to reveal more fruits)[/]")
                     .InstructionsText(
                         "[grey](Press [blue]<space>[/] to toggle a choice, [green]<enter>[/] to accept)[/]")
@@ -76,7 +94,7 @@ namespace AzureConfigurationDiff
             if (chosenKeyVaults.Count == 2)
             {
                 AnsiConsole.MarkupLine(
-                    $"[green]You selected {chosenKeyVaults[0].Name} and {chosenKeyVaults[1].Name}.[/]");
+                    $"You selected [green]{chosenKeyVaults[0].Name}[/] and [green]{chosenKeyVaults[1].Name}.[/]");
                 return chosenKeyVaults;
             }
 
@@ -84,7 +102,7 @@ namespace AzureConfigurationDiff
             return default;
         }
 
-        private async Task CompareKeyVaults(IReadOnlyList<IVault> chooseKeyVaults)
+        private async Task CompareKeyVaults(IReadOnlyList<IVault> chooseKeyVaults, ComparisonType comparisonType)
         {
             AnsiConsole.WriteLine();
 
@@ -103,18 +121,20 @@ namespace AzureConfigurationDiff
                     rightSecrets = await _azureService.ListKeyVaultSecrets(rightKeyVault);
                 });
 
-            var differences = AzureSecretDiffer.DoDiff(leftSecrets.ToList(), rightSecrets.ToList());
+            var differences = AzureSecretDiffer.DoDiff(leftSecrets, rightSecrets, comparisonType);
             if (!differences.Any())
             {
-                AnsiConsole.Render(new Rule("[green]The key vaults are identic[/]").RuleStyle("grey").LeftAligned());
+                AnsiConsole.Markup($"The key vaults don't have any difference with the comparison type [green]{comparisonType}[/]");
                 return;
             }
 
             AnsiConsole.Render(BuildDiffTable(leftKeyVault, rightKeyVault, differences));
         }
 
-        private static Table BuildDiffTable(IVault leftKeyVault, IVault rightKeyVault,
-            IReadOnlyList<DiffItem> differences)
+        private static Table BuildDiffTable(
+            IHasName leftKeyVault,
+            IHasName rightKeyVault,
+            IEnumerable<DiffItem> differences)
         {
             var table = new Table()
                 .AddColumns($"[grey]{leftKeyVault.Name}[/]", $"[grey]{rightKeyVault.Name}[/]")
@@ -168,7 +188,7 @@ namespace AzureConfigurationDiff
 
             foreach (var diffItemDifference in diffItem.Differences)
             {
-                rightDiff.AppendLine($"{diffItemDifference.PropertyName}:{diffItem.RightSecret.Value}");
+                rightDiff.AppendLine($"{diffItemDifference.PropertyName}:{Markup.Escape(diffItem.RightSecret.Value)}");
             }
 
             rightDiff.AppendLine("[/]");
@@ -183,7 +203,7 @@ namespace AzureConfigurationDiff
 
             foreach (var diffItemDifference in diffItem.Differences)
             {
-                leftDiff.AppendLine($"{diffItemDifference.PropertyName}:{diffItem.LeftSecret.Value}");
+                leftDiff.AppendLine($"{diffItemDifference.PropertyName}:{Markup.Escape(diffItem.LeftSecret.Value)}");
             }
 
             leftDiff.AppendLine("[/]");

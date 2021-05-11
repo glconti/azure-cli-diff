@@ -2,9 +2,9 @@
 {
     public enum DiffType
     {
-        LeftOnly,
-        RightOnly,
+        Unmodified,
         Modified,
-        Unmodified
+        LeftOnly,
+        RightOnly
     }
 }
