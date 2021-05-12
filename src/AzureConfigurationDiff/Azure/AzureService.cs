@@ -18,7 +18,7 @@ namespace AzureConfigurationDiff.Azure
     public class AzureService
     {
         private IAzure _azureClient;
-        
+
         public async Task<string> Login()
         {
             var azureCliCredential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
@@ -28,14 +28,15 @@ namespace AzureConfigurationDiff.Azure
                 ExcludeVisualStudioCodeCredential = true,
                 ExcludeVisualStudioCredential = true
             });
-            var credentials = new AzureIdentityFluentCredentialAdapter(azureCliCredential, "4d6d2f7a-a194-40ac-ae91-06847db8d8a2", AzureEnvironment.AzureGlobalCloud);
-            
+            var credentials = new AzureIdentityFluentCredentialAdapter(azureCliCredential, string.Empty,
+                AzureEnvironment.AzureGlobalCloud);
+
             _azureClient = await AzureAPi
                 .Configure()
                 .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
                 .Authenticate(credentials)
                 .WithDefaultSubscriptionAsync();
-    
+
             return _azureClient.GetCurrentSubscription().DisplayName;
         }
 
@@ -60,13 +61,13 @@ namespace AzureConfigurationDiff.Azure
             }
 
             var secrets = new ConcurrentBag<AzureSecret>();
-            
+
             await secretPropertiesList.ParallelForEachAsync(async properties =>
             {
                 var keyVaultSecret = (await client.GetSecretAsync(properties.Name)).Value;
                 secrets.Add(new AzureSecret(properties, keyVaultSecret.Value));
             });
-            
+
             return secrets.OrderBy(s => s.Name).ToList();
         }
     }

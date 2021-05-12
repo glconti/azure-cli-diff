@@ -19,18 +19,22 @@ namespace AzureConfigurationDiff
 
         public async Task Run()
         {
+            if (!ConsoleCanAcceptKeys()) return;
+
             try
             {
-                if (!ConsoleCanAcceptKeys()) return;
-
                 await Login();
 
-                var chooseKeyVaults = await ChooseKeyVaults();
-                if (chooseKeyVaults is null) return;
+                do
+                {
+                    var chooseKeyVaults = await ChooseKeyVaults();
+                    if (chooseKeyVaults is null) return;
 
-                var chooseComparisonType = ChooseComparisonType();
+                    var chooseComparisonType = ChooseComparisonType();
 
-                await CompareKeyVaults(chooseKeyVaults, chooseComparisonType);
+                    await CompareKeyVaults(chooseKeyVaults, chooseComparisonType);
+
+                } while (AnsiConsole.Prompt(new ConfirmationPrompt("Do you want to run another comparison?")));
             }
             catch (Exception e)
             {
