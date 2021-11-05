@@ -12,7 +12,6 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishTrimmed>true</PublishTrimmed>
-    <PublishReadyToRun>true</PublishReadyToRun>
     <TrimMode>link</TrimMode>
   </PropertyGroup>
 
